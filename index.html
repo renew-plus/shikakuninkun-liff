@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>シカクニンくん - スタッフ登録</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <style>
+    body { background-color: #f8f9fa; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .main-card { max-width: 460px; margin: 40px auto; padding: 24px; background: #fff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; }
+    .spinner-border { width: 2.5rem; height: 2.5rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="main-card">
+      <h5 class="fw-bold mb-3">シカクニンくん</h5>
+
+      <div id="loadingArea">
+        <div class="spinner-border text-primary mb-3" role="status"></div>
+        <p class="text-muted small" id="loadingStage">連携準備をしています…</p>
+      </div>
+
+      <div id="readyArea" style="display:none;">
+        <p class="mb-2"><span class="badge bg-primary" id="companyBadge"></span></p>
+        <div class="alert alert-success text-start small mb-3">
+          連携の準備ができました！<br>
+          下のボタンからLINE公式アカウントを友だち追加してください。追加後、資格証の写真をトーク画面に送信するだけで提出が完了します。
+        </div>
+        <a class="btn btn-success btn-lg w-100 fw-bold py-3" id="addFriendBtn" target="_blank">💬 友だち追加する</a>
+      </div>
+
+      <div id="errorArea" style="display:none;">
+        <div class="alert alert-danger small" id="errorMsg" style="white-space: pre-wrap;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ★要設定：LINE Developersコンソールで発行したLIFF ID（スタッフ登録用）
+    const LIFF_ID = "2011665840-T7zkJ2lV";
+
+    // ★要設定：LINE公式アカウントの「友だち追加URL」（ベーシックID）
+    // LINE Official Account Manager の「友だち追加ガイド」で確認できます
+    const ADD_FRIEND_URL = "https://line.me/R/ti/p/@your_basic_id";
+
+    // ★要設定：デプロイ済みのGAS WebアプリのexecURL
+    // 「デプロイを管理」画面のウェブアプリURLをそのまま貼り付けてください（末尾は/exec）
+    const GAS_EXEC_URL = "https://script.google.com/macros/s/AKfycbw_wfV8bOHelgBpvs1lBol98YW-kEgO6_9o6E0VdjRTENtu2-C8eBuGFBWX7kAhFNR0Fg/exec";
+
+    let settled = false;
+
+    function setStage(text) {
+      const el = document.getElementById("loadingStage");
+      if (el) el.textContent = text;
+    }
+
+    function showError(msg) {
+      settled = true;
+      document.getElementById("loadingArea").style.display = "none";
+      document.getElementById("readyArea").style.display = "none";
+      document.getElementById("errorArea").style.display = "block";
+      document.getElementById("errorMsg").textContent = msg;
+    }
+
+    function showReady(companyName) {
+      settled = true;
+      document.getElementById("loadingArea").style.display = "none";
+      document.getElementById("readyArea").style.display = "block";
+      document.getElementById("companyBadge").textContent = companyName;
+      document.getElementById("addFriendBtn").href = ADD_FRIEND_URL;
+    }
+
+    // 15秒たっても反応がない場合、直前の進捗テキストがそのまま残るので原因調査に使える
+    setTimeout(() => {
+      if (!settled) {
+        const liffLoaded = (typeof liff !== "undefined");
+        showError(
+          "読み込みが完了しませんでした。\n" +
+          "[診断情報] LIFF SDK読込: " + (liffLoaded ? "OK" : "失敗") + " / 直前の段階: " + document.getElementById("loadingStage").textContent + "\n" +
+          "この画面のスクリーンショットを開発者にお送りください。"
+        );
+      }
+    }, 15000);
+
+    function getCompanyNameFromUrl() {
+      // liff.init()完了後、SDKがURLを元のクエリ（?companyName=...）に復元してくれる
+      const params = new URLSearchParams(window.location.search);
+      return params.get("companyName") || "";
+    }
+
+    try {
+      if (typeof liff === "undefined") {
+        showError("LIFF SDKの読み込みに失敗しました。通信環境をご確認のうえ、再度お試しください。[診断コード: SDK_NOT_LOADED]");
+      } else {
+        setStage("① LIFFを初期化しています…");
+        liff.init({ liffId: LIFF_ID }).then(() => {
+          setStage("② 会社情報を確認しています…");
+          const companyName = getCompanyNameFromUrl();
+          if (!companyName) {
+            showError("会社情報が取得できませんでした。QRコードを再度読み取ってください。");
+            return null;
+          }
+
+          setStage("③ ログイン状態を確認しています…");
+          if (!liff.isLoggedIn()) {
+            setStage("④ ログイン画面へ移動します…");
+            liff.login();
+            return null;
+          }
+
+          setStage("⑤ プロフィールを取得しています…");
+          return liff.getProfile().then(profile => ({ profile, companyName }));
+        }).then(result => {
+          if (!result) return; // login()でリダイレクト中、またはエラーで既に表示済み
+          const { profile, companyName } = result;
+
+          setStage("⑥ サーバーに登録しています…");
+          // GASはCORSプリフライトに対応していないため、text/plainで送りJSON.parseはサーバー側で行う
+          fetch(GAS_EXEC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "pre_register_liff",
+              companyName: companyName,
+              userId: profile.userId,
+              displayName: profile.displayName
+            })
+          })
+            .then(res => res.json())
+            .then(res => {
+              if (res.success) {
+                showReady(companyName);
+              } else {
+                showError((res.message || "登録に失敗しました。") + " [診断コード: SERVER_REJECTED]");
+              }
+            })
+            .catch(err => {
+              showError("サーバーとの通信に失敗しました: " + err.message + " [診断コード: FETCH_FAIL]");
+            });
+        }).catch(err => {
+          showError("LINE連携でエラーが発生しました: " + (err && err.message ? err.message : JSON.stringify(err)) + " [診断コード: LIFF_INIT_FAIL]");
+        });
+      }
+    } catch (err) {
+      showError("初期化中にエラーが発生しました: " + err.message + " [診断コード: SYNC_ERROR]");
+    }
+  </script>
+</body>
+</html>
