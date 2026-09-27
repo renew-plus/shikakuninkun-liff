@@ -43,7 +43,7 @@
 
     // ★要設定：LINE公式アカウントの「友だち追加URL」（ベーシックID）
     // LINE Official Account Manager の「友だち追加ガイド」で確認できます
-    const ADD_FRIEND_URL = "https://line.me/R/ti/p/@987etujh";
+    const ADD_FRIEND_URL = "https://line.me/R/ti/p/@your_basic_id";
 
     // ★要設定：デプロイ済みのGAS WebアプリのexecURL
     // 「デプロイを管理」画面のウェブアプリURLをそのまま貼り付けてください（末尾は/exec）
@@ -117,17 +117,13 @@
           const { profile, companyName } = result;
 
           setStage("⑥ サーバーに登録しています…");
-          // GASはCORSプリフライトに対応していないため、text/plainで送りJSON.parseはサーバー側で行う
-          fetch(GAS_EXEC_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "pre_register_liff",
-              companyName: companyName,
-              userId: profile.userId,
-              displayName: profile.displayName
-            })
-          })
+          const apiUrl = GAS_EXEC_URL +
+            "?page=preregister_api" +
+            "&companyName=" + encodeURIComponent(companyName) +
+            "&userId=" + encodeURIComponent(profile.userId) +
+            "&displayName=" + encodeURIComponent(profile.displayName);
+
+          fetch(apiUrl)
             .then(res => res.json())
             .then(res => {
               if (res.success) {
