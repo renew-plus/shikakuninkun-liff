@@ -117,24 +117,42 @@
           const { profile, companyName } = result;
 
           setStage("⑥ サーバーに登録しています…");
+
+          // GASはCORSヘッダーを返さずfetch()では読み取れないため、JSONPで通信する
+          const callbackName = "liffCallback_" + Date.now();
+          let jsonpSettled = false;
+
+          window[callbackName] = function (res) {
+            jsonpSettled = true;
+            delete window[callbackName];
+            if (res.success) {
+              showReady(companyName);
+            } else {
+              showError((res.message || "登録に失敗しました。") + " [診断コード: SERVER_REJECTED]");
+            }
+          };
+
           const apiUrl = GAS_EXEC_URL +
             "?page=preregister_api" +
             "&companyName=" + encodeURIComponent(companyName) +
             "&userId=" + encodeURIComponent(profile.userId) +
-            "&displayName=" + encodeURIComponent(profile.displayName);
+            "&displayName=" + encodeURIComponent(profile.displayName) +
+            "&callback=" + callbackName;
 
-          fetch(apiUrl)
-            .then(res => res.json())
-            .then(res => {
-              if (res.success) {
-                showReady(companyName);
-              } else {
-                showError((res.message || "登録に失敗しました。") + " [診断コード: SERVER_REJECTED]");
-              }
-            })
-            .catch(err => {
-              showError("サーバーとの通信に失敗しました: " + err.message + " [診断コード: FETCH_FAIL]");
-            });
+          const script = document.createElement("script");
+          script.src = apiUrl;
+          script.onerror = function () {
+            if (!jsonpSettled) {
+              showError("サーバーへの接続に失敗しました。[診断コード: JSONP_LOAD_FAIL]");
+            }
+          };
+          document.body.appendChild(script);
+
+          setTimeout(() => {
+            if (!jsonpSettled && !settled) {
+              showError("サーバーからの応答がありませんでした。[診断コード: JSONP_TIMEOUT]");
+            }
+          }, 10000);
         }).catch(err => {
           showError("LINE連携でエラーが発生しました: " + (err && err.message ? err.message : JSON.stringify(err)) + " [診断コード: LIFF_INIT_FAIL]");
         });
